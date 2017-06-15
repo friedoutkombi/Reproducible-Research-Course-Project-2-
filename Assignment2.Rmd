@@ -21,8 +21,8 @@ library(ggplot2)
 
 Loading the data in R Studio
 ```{r loadData, results="hide"}
-file="C:/Users/Nicholas/Documents/repdata%2Fdata%2FStormData.csv"
-data<- read.csv(file,header=T)
+file="C:/Users/Nicholas/Documents/repdata%2Fdata%2FStormData.csv.bz2"
+data<- read.csv(bzfile(file),header=TRUE)
 dim(data)
 ```
 
