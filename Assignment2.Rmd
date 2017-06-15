@@ -1,0 +1,187 @@
+---
+title: "Reproducible Research: Course Project 2: Storm Events Data Analysis"
+output: html_document
+---
+15/06/2017
+
+#Synopsis
+The dataset used here is the U.S. National Oceanic and Atmospheric Administration’s (NOAA) storm database which contains events from 1950 to 2011 (Can be found [here](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2)). This data contains storm event data as well as impact data including injuries, fatalities, property damage and crop damage among others. We will use this data to answer two questions:
+* Q1. Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+* Q2. Across the United States, which types of events have the greatest economic consequences?
+
+The conclusion reached by the analysis is that the weather event with the largest injuries & fatalities is tornadoes. The weather event with the greatest total damage cost worked out to be floods, followed by hurricane and typhoons. Further analysis can be done about these weather types and their impacts but this study is limited in scope.
+
+
+#Data Processing
+
+Load library
+```{r loadlibrary, results="hide",message=FALSE, warning=FALSE}
+library(ggplot2)
+```
+
+Loading the data in R Studio
+```{r loadData, results="hide"}
+file="C:/Users/Nicholas/Documents/repdata%2Fdata%2FStormData.csv"
+data<- read.csv(file,header=T)
+dim(data)
+```
+
+Looking at the `dim(data)` we see that we have 37 columns (variables) and 902297 rows or instances
+```{r summary}
+summary(data)
+```
+
+Looking at the summary it is apparent we have too many columns of data to deal with. For the assignment questions we will only need to cherry pick particular columns. These are below:
+
+* EVTYPE as a measure of event type (e.g. tornado, flood, etc.)
+* FATALITIES as a measure of harm to human health
+* INJURIES as a measure of harm to human health
+* PROPDMG as a measure of property damage and hence economic damage in USD
+* PROPDMGEXP as a measure of magnitude of property damage (e.g. thousands, millions USD, etc.)
+* CROPDMG as a measure of crop damage and hence economic damage in USD
+* CROPDMGEXP as a measure of magnitude of crop damage (e.g. thousands, millions USD, etc.)
+
+To make our dataset smaller and easier to work with we will subset this data and name it `cutdata`.
+``` {r cut}
+cutdata<-data[,c('EVTYPE', 'FATALITIES', 'INJURIES', 'PROPDMG', 'PROPDMGEXP','CROPDMG', 'CROPDMGEXP')]
+```
+
+Let us check the first 5 rows of cutdata to check it's accurate.
+``` {r cuthead}
+head(cutdata,5)
+```
+
+We need to establish what our property and crop damage are in terms of dollars.
+Right now each is split into two columns. The value, and then a mutiplier indicated by a letter ie. K for thousands, B for billions. The multiplier is contained in columns *PROPDMGEXP* and *CROPDMGEXP* respectively. Let us use the function `unique` to see what entries we have for each column.
+``` {r unique}
+unique(cutdata$PROPDMGEXP)
+unique(cutdata$CROPDMGEXP)
+```
+
+As we can see there is a mix of upper & lower case as well empty, numeric and symbols. We would like to remove these and end up with our expense cost. There is no easy way to do this so we will replace each type with the correct exponent.
+```{r EXPconversion}
+# Replace missing data in PROPDMG and CROPDMG with 0's
+cutdata$PROPDMG[(cutdata$PROPDMG == "")] <- 0
+cutdata$CROPDMG[(cutdata$CROPDMG == "")] <- 0
+
+cutdata$PROPDMGEXP <- as.character(cutdata$PROPDMGEXP)
+cutdata$CROPDMGEXP <- as.character(cutdata$CROPDMGEXP)
+
+#Replace EXP value with appropriate order of magnitude value.
+cutdata$PROPDMGEXP[(cutdata$PROPDMGEXP == "")] <- 0
+cutdata$PROPDMGEXP[(cutdata$PROPDMGEXP == "+") | (cutdata$PROPDMGEXP == "-") | (cutdata$PROPDMGEXP == "?")] <- 1
+cutdata$PROPDMGEXP[(cutdata$PROPDMGEXP == "h") | (cutdata$PROPDMGEXP == "H")] <- 2
+cutdata$PROPDMGEXP[(cutdata$PROPDMGEXP == "k") | (cutdata$PROPDMGEXP == "K")] <- 3
+cutdata$PROPDMGEXP[(cutdata$PROPDMGEXP == "m") | (cutdata$PROPDMGEXP == "M")] <- 6
+cutdata$PROPDMGEXP[(cutdata$PROPDMGEXP == "B")] <- 9
+cutdata$CROPDMGEXP[(cutdata$CROPDMGEXP == "")] <- 0
+cutdata$CROPDMGEXP[(cutdata$CROPDMGEXP == "+") | (cutdata$CROPDMGEXP == "-") | (cutdata$CROPDMGEXP == "?")] <- 1
+cutdata$CROPDMGEXP[(cutdata$CROPDMGEXP == "h") | (cutdata$CROPDMGEXP == "H")] <- 2
+cutdata$CROPDMGEXP[(cutdata$CROPDMGEXP == "k") | (cutdata$CROPDMGEXP == "K")] <- 3
+cutdata$CROPDMGEXP[(cutdata$CROPDMGEXP == "m") | (cutdata$CROPDMGEXP == "M")] <- 6
+cutdata$CROPDMGEXP[(cutdata$CROPDMGEXP == "B")] <- 9
+```
+
+Let's make sure our two new columns are numeric values
+``` {r makenumeric}
+cutdata$PROPDMGEXP<-as.numeric(cutdata$PROPDMGEXP)
+cutdata$CROPDMGEXP<-as.numeric(cutdata$CROPDMGEXP)
+```
+
+We will create a new column for both PROP/CROP which will take the value to the exponent.
+``` {r exponent}
+cutdata$PROPDMGcost<-cutdata$PROPDMG*(10^cutdata$PROPDMGEXP)
+cutdata$CROPDMGcost<-cutdata$CROPDMG*(10^cutdata$CROPDMGEXP)
+```
+Taking a look at our data we can see it has the new data filled in for the two cost columns.
+``` {r exptesting}
+head(cutdata,5)
+```
+
+#Results (with Analysis)
+**Q1. Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health ?**
+
+We will look at fatalities & injuries to answer the question. First we will do the `FATALITIES`. Aggregate the data by event type, this will give the total fatalities for each event.
+``` {r fatalitiesagg}
+fatalities<-aggregate(FATALITIES ~ EVTYPE, cutdata, sum)
+```
+
+Taking the head of the `fatalities` data we can see it isn't in order
+``` {r headfatalities}
+head(fatalities,5)
+```
+
+Use the `order()` function to sort this from highest to lowest by fatalities.Please note the `[1:20,]` is being used to capture only the top 20 rows, that is the top 20 events by fatalities. If we don't do this our graph will contain way too many event types to be legible and useful
+``` {r oderfatalities}
+orderedfatalities<- fatalities[order(-fatalities$FATALITIES),][1:20, ]
+```
+Let's double check this by looking at the head.
+``` {r head order}
+head(orderedfatalities,5)
+```
+Last step before graphing is to prep the x axis (*EVTYPE*) so it shows on the graph in highest to lowest.
+``` {r orderforgraph}
+orderedfatalities$EVTYPE<-factor(orderedfatalities$EVTYPE,order=TRUE,levels=orderedfatalities$EVTYPE)
+```
+
+Now let us plot this graph!
+
+``` {r Fatalitiesgraph, echo=FALSE}
+ggplot(orderedfatalities, aes(x = EVTYPE, y = FATALITIES)) + 
+  geom_bar(stat = "identity", fill = "dark blue") +
+  theme(axis.text.x = element_text(angle = 90,hjust = 1)) +
+  xlab("Event Type") + ylab("Fatalities") +
+  ggtitle("# Fatalities by Weather Events")
+```
+
+We are now going to do the exact same process for *INJURIES*. The methodology is the same so will post as a block of code leading up to the plotting.
+``` {r INJURYprepwork}
+injuries<-aggregate(INJURIES ~ EVTYPE, cutdata, sum)
+
+orderedinjuries<- injuries[order(-injuries$INJURIES),][1:20, ]
+
+orderedinjuries$EVTYPE<-factor(orderedinjuries$EVTYPE,order=TRUE,levels=orderedinjuries$EVTYPE)
+```
+Now let us plot this *INJURY* graph!
+
+``` {r Injuriesgraph, echo=FALSE}
+ggplot(orderedinjuries, aes(x = EVTYPE, y = INJURIES)) + 
+  geom_bar(stat = "identity", fill = "dark green") +
+  theme(axis.text.x = element_text(angle = 90,hjust = 1)) +
+  xlab("Event Type") + ylab("Injuries") +
+  ggtitle("# Injuries by Weather Events")
+```
+
+
+Once again *TORNADO* appears to be the leader of *FATALITIES* and *INJURIES*!
+
+**Q2. Across the United States, which types of events have the greatest economic consequences?**
+
+To answer this we turn our attention to the *PROPDMGEXP* & *CROPDMGEXP* columns we created earlier. These contain the damage costs for property and crops for each case. We will first combine these into a new column *TOTALEXP*. 
+``` {r TOTALEXP}
+cutdata$TOTALEXP<-cutdata$PROPDMGcost+cutdata$CROPDMGcost
+```
+Aggregate the data by event type, this will give the total damage cost for each event type.
+``` {r fatalities}
+totalcost<-aggregate(TOTALEXP ~ EVTYPE, cutdata, sum)
+```
+Use the `order` function to sort this from highest to lowest by `totalcost`.Please note the `[1:20,]` is being used to capture only the top 20 rows, that is the highest 20 costs.
+``` {r oderedtotalcost}
+orderedtotalcost<- totalcost[order(-totalcost$TOTALEXP),][1:20, ]
+```
+Last step before graphing is to prep the x axis (*EVTYPE*) so it shows on the graph from highest to lowest.
+``` {r orderforcostgraph}
+orderedtotalcost$EVTYPE<-factor(orderedtotalcost$EVTYPE,order=TRUE,levels=orderedtotalcost$EVTYPE)
+```
+Now let us plot this greatest economic consequences graph!
+
+``` {r TotalCostgraph, echo=FALSE}
+ggplot(orderedtotalcost, aes(x = EVTYPE, y = TOTALEXP/1000000)) + 
+  geom_bar(stat = "identity", fill = "dark red") +
+  theme(axis.text.x = element_text(angle = 90,hjust = 1)) +
+  xlab("Event Type") + ylab("Total Cost (in millions of dollars)") +
+  ggtitle("Total Cost by Weather Events")
+```
+
+
+At the conlusion of this study we can see overrall Tornadoes are the greatest cause of injury and death whilst floods are the greatest total cost in damages.
